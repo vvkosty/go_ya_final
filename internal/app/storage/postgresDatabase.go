@@ -34,6 +34,18 @@ func NewUniqueViolatesError(err error) error {
 	}
 }
 
+type UserNotFoundError struct{ Err error }
+
+func (unf *UserNotFoundError) Error() string {
+	return fmt.Sprintf("UserNotFoundError: %v", unf.Err)
+}
+
+func NewUserNotFoundError(err error) error {
+	return &UserNotFoundError{
+		Err: err,
+	}
+}
+
 func NewPostgresDatabase(dsn string) *PostgresDatabase {
 	var md PostgresDatabase
 	var err error
@@ -48,10 +60,10 @@ func NewPostgresDatabase(dsn string) *PostgresDatabase {
 }
 
 //
-//func (m *PostgresDatabase) Find(id string) (string, error) {
+//func (m *PostgresDatabase) Find(Id string) (string, error) {
 //	var url string
 //
-//	row := m.db.QueryRow("SELECT full_url FROM urls WHERE short_url_id = $1", id)
+//	row := m.db.QueryRow("SELECT full_url FROM urls WHERE short_url_id = $1", Id)
 //	err := row.Scan(&url)
 //	if err != nil {
 //		return "", err

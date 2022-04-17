@@ -272,12 +272,51 @@ func (h *Handler) RegisterUser(c *gin.Context) {
 
 // LoginUser Аутентификация пользователя
 func (h *Handler) LoginUser(c *gin.Context) {
+	var userLoginDto userLoginDto
+	var userNotFoundError *storage.UserNotFoundError
 
+	body, _ := io.ReadAll(c.Request.Body)
+	defer c.Request.Body.Close()
+
+	if err := json.Unmarshal(body, &userLoginDto); err != nil {
+		log.Println(err)
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	_, err = h.UserStorage.Find(userLoginDto.Login, userLoginDto.Password)
+	if err != nil {
+		log.Println(err)
+		if errors.As(err, &userNotFoundError) {
+			c.Status(http.StatusUnauthorized)
+			return
+		}
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	authCookie, err := h.Encoder.Encrypt(userLoginDto.Login)
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	c.SetCookie(
+		"user",
+		authCookie,
+		3600,
+		"/",
+		h.Config.Host,
+		false,
+		false,
+	)
 }
 
-// SaveOrders Загрузка пользователем номера заказа для расчёта
-func (h *Handler) SaveOrders(c *gin.Context) {
-
+// SaveOrder Загрузка пользователем номера заказа для расчёта
+func (h *Handler) SaveOrder(c *gin.Context) {
+	//body, _ := io.ReadAll(c.Request.Body)
+	//defer c.Request.Body.Close()
 }
 
 // Withdraw Списание баллов с накопительного счёта в счёт оплаты нового заказа

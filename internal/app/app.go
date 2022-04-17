@@ -29,7 +29,9 @@ func (app *App) Init() {
 	app.Handler.UserStorage = &storage.UserStorage{DB: app.Storage.Instance()}
 	app.Handler.Config = app.Config
 	app.Handler.Encoder = app.Encoder
+
 	app.Middleware.Config = app.Config
+	app.Middleware.Encoder = app.Encoder
 }
 
 func (app *App) Start() {
@@ -56,7 +58,7 @@ func (app *App) SetupRouter() *gin.Engine {
 		v1.GET("/balance", app.Handler.GetUserBalance)
 		v1.GET("/balance/withdrawals", app.Handler.GetUserBalanceWithdrawals)
 
-		v1.POST("/orders", app.Handler.SaveOrders)
+		v1.POST("/orders", app.Handler.SaveOrder)
 		v1.POST("/balance/withdraw", app.Handler.Withdraw)
 
 	}
