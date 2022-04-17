@@ -1,9 +1,6 @@
 package middlewares
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"encoding/hex"
 	"log"
 	"net/http"
 
@@ -12,10 +9,9 @@ import (
 	"github.com/vvkosty/go_ya_final/internal/app/helpers"
 )
 
-const secretKey = "123e4567-e89b-12d3-a456-42661417"
-
 type Middleware struct {
-	Config *config.ServerConfig
+	Config  *config.Config
+	Encoder *helpers.Encoder
 }
 
 func (m *Middleware) NeedAuth(c *gin.Context) {
@@ -27,7 +23,7 @@ func (m *Middleware) NeedAuth(c *gin.Context) {
 		return
 	}
 
-	userID, err := m.decrypt([]byte(authCookie.Value))
+	userID, err := m.Encoder.Decrypt([]byte(authCookie.Value))
 	if err != nil {
 		log.Println(err)
 		return
@@ -46,55 +42,4 @@ func (m *Middleware) NeedAuth(c *gin.Context) {
 	c.Set("userId", userID)
 
 	c.Next()
-}
-
-func (m *Middleware) encrypt(value string) (string, error) {
-	// получаем cipher.Block
-	aesblock, err := aes.NewCipher([]byte(secretKey))
-	if err != nil {
-		return "", err
-	}
-
-	aesgcm, err := cipher.NewGCM(aesblock)
-	if err != nil {
-		return "", err
-	}
-
-	// создаём вектор инициализации
-	nonce, err := helpers.GenerateRandom(aesgcm.NonceSize())
-	if err != nil {
-		return "", err
-	}
-
-	// зашифровываем
-	dst := aesgcm.Seal(nonce, nonce, []byte(value), nil)
-
-	return hex.EncodeToString(dst), nil
-}
-
-func (m *Middleware) decrypt(value []byte) (string, error) {
-	var decodedValue []byte
-	decodedValue, _ = hex.DecodeString(string(value))
-
-	// получаем cipher.Block
-	aesblock, err := aes.NewCipher([]byte(secretKey))
-	if err != nil {
-		return "", err
-	}
-
-	aesgcm, err := cipher.NewGCM(aesblock)
-	if err != nil {
-		return "", err
-	}
-
-	// создаём вектор инициализации
-	nonce, cipherText := decodedValue[:aesgcm.NonceSize()], decodedValue[aesgcm.NonceSize():]
-
-	// расшифровываем
-	userID, err := aesgcm.Open(nil, nonce, cipherText, nil)
-	if err != nil {
-		return "", err
-	}
-
-	return string(userID), nil
 }

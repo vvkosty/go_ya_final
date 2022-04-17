@@ -1,19 +1,27 @@
 package app
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
+	"log"
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	_ "github.com/jackc/pgx/v4/stdlib"
 	config "github.com/vvkosty/go_ya_final/internal/app/config"
+	"github.com/vvkosty/go_ya_final/internal/app/helpers"
 	storage "github.com/vvkosty/go_ya_final/internal/app/storage"
 )
 
 type (
 	Handler struct {
-		Storage storage.Repository
-		Config  *config.ServerConfig
+		UserStorage *storage.UserStorage
+		Config      *config.Config
+		Encoder     *helpers.Encoder
 	}
 
-	UserLogin struct {
+	userLoginDto struct {
 		Login    string `json:"login"`
 		Password string `json:"password"`
 	}
@@ -221,7 +229,45 @@ func (h *Handler) GetUserBalanceWithdrawals(c *gin.Context) {
 
 // RegisterUser Регистрация пользователя
 func (h *Handler) RegisterUser(c *gin.Context) {
+	var userLoginDto userLoginDto
+	var uniqueViolatesError *storage.UniqueViolatesError
 
+	body, _ := io.ReadAll(c.Request.Body)
+	defer c.Request.Body.Close()
+
+	if err := json.Unmarshal(body, &userLoginDto); err != nil {
+		log.Println(err)
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	authCookie, err := h.Encoder.Encrypt(userLoginDto.Login)
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	err = h.UserStorage.Create(userLoginDto.Login, userLoginDto.Password)
+	if err != nil {
+		log.Println(err)
+		if errors.As(err, &uniqueViolatesError) {
+			c.Status(http.StatusConflict)
+			return
+		}
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	c.SetCookie(
+		"user",
+		authCookie,
+		3600,
+		"/",
+		h.Config.Host,
+		false,
+		false,
+	)
 }
 
 // LoginUser Аутентификация пользователя
