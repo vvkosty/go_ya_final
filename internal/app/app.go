@@ -13,22 +13,29 @@ import (
 	config "github.com/vvkosty/go_ya_final/internal/app/config"
 	handler "github.com/vvkosty/go_ya_final/internal/app/handlers"
 	"github.com/vvkosty/go_ya_final/internal/app/helpers"
+	"github.com/vvkosty/go_ya_final/internal/app/integrations"
 	middleware "github.com/vvkosty/go_ya_final/internal/app/middlewares"
 	storage "github.com/vvkosty/go_ya_final/internal/app/storage"
 )
 
 type App struct {
-	Config     *config.Config
-	Storage    storage.Repository
-	Handler    *handler.Handler
-	Middleware *middleware.Middleware
-	Encoder    *helpers.Encoder
+	Config           *config.Config
+	Storage          storage.Repository
+	Handler          *handler.Handler
+	Middleware       *middleware.Middleware
+	Encoder          *helpers.Encoder
+	AccrualAPIClient *integrations.AccrualAPIClient
 }
 
 func (app *App) Init() {
 	app.Handler.UserStorage = &storage.UserStorage{DB: app.Storage.Instance()}
+	app.Handler.OrderStorage = &storage.OrderStorage{DB: app.Storage.Instance()}
+	app.Handler.UserBalanceStorage = &storage.UserBalanceStorage{DB: app.Storage.Instance()}
+	app.Handler.WithdrawHistoryStorage = &storage.WithdrawHistoryStorage{DB: app.Storage.Instance()}
+
 	app.Handler.Config = app.Config
 	app.Handler.Encoder = app.Encoder
+	app.Handler.AccrualAPIClient = app.AccrualAPIClient
 
 	app.Middleware.Config = app.Config
 	app.Middleware.Encoder = app.Encoder
@@ -56,11 +63,10 @@ func (app *App) SetupRouter() *gin.Engine {
 	{
 		v1.GET("/orders", app.Handler.GetOrders)
 		v1.GET("/balance", app.Handler.GetUserBalance)
-		v1.GET("/balance/withdrawals", app.Handler.GetUserBalanceWithdrawals)
+		v1.GET("/balance/withdrawals", app.Handler.GetUserWithdrawals)
 
 		v1.POST("/orders", app.Handler.SaveOrder)
 		v1.POST("/balance/withdraw", app.Handler.Withdraw)
-
 	}
 
 	r.NoRoute(func(c *gin.Context) {

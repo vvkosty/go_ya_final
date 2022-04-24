@@ -6,249 +6,197 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/jackc/pgx/v4/stdlib"
+	"github.com/theplant/luhn"
 	config "github.com/vvkosty/go_ya_final/internal/app/config"
+	"github.com/vvkosty/go_ya_final/internal/app/enums"
 	"github.com/vvkosty/go_ya_final/internal/app/helpers"
+	"github.com/vvkosty/go_ya_final/internal/app/integrations"
 	storage "github.com/vvkosty/go_ya_final/internal/app/storage"
 )
 
 type (
 	Handler struct {
-		UserStorage *storage.UserStorage
-		Config      *config.Config
-		Encoder     *helpers.Encoder
+		Config  *config.Config
+		Encoder *helpers.Encoder
+
+		UserStorage            *storage.UserStorage
+		OrderStorage           *storage.OrderStorage
+		UserBalanceStorage     *storage.UserBalanceStorage
+		WithdrawHistoryStorage *storage.WithdrawHistoryStorage
+
+		AccrualAPIClient *integrations.AccrualAPIClient
 	}
 
 	userLoginDto struct {
 		Login    string `json:"login"`
 		Password string `json:"password"`
 	}
+
+	withdrawDto struct {
+		OrderID string  `json:"order"`
+		Sum     float64 `json:"sum"`
+	}
+
+	getOrdersResponseDto struct {
+		Number     string  `json:"number"`
+		Status     string  `json:"status"`
+		Accrual    float64 `json:"accrual"`
+		UploadedAt string  `json:"uploaded_at"`
+	}
+
+	getUserBalanceResponseDto struct {
+		Current   float64 `json:"current"`
+		Withdrawn float64 `json:"withdrawn"`
+	}
+
+	getUserWithdrawalsResponseDto struct {
+		OrderID     string  `json:"order"`
+		Sum         float64 `json:"sum"`
+		ProcessedAt string  `json:"processed_at"`
+	}
 )
 
 var err error
-
-//
-//func (h *Handler) GetFullLink(c *gin.Context) {
-//	urlID := c.Param("id")
-//	originalURL, err := h.Storage.Find(urlID)
-//	if err != nil {
-//		log.Println(err)
-//		c.Status(http.StatusBadRequest)
-//		return
-//	}
-//
-//	if len(originalURL) <= 0 {
-//		c.Status(http.StatusBadRequest)
-//		return
-//	}
-//
-//	c.Header(`Location`, originalURL)
-//	c.Status(http.StatusTemporaryRedirect)
-//}
-//
-//func (h *Handler) Register(c *gin.Context) {
-//	body, _ := io.ReadAll(c.Request.Body)
-//	defer c.Request.Body.Close()
-//
-//	urlToEncode, err := url.ParseRequestURI(string(body))
-//	if err != nil {
-//		fmt.Println(err)
-//		c.Status(http.StatusBadRequest)
-//		return
-//	}
-//
-//	checksum := helpers.GenerateChecksum(urlToEncode.String())
-//	entity, _ := h.Storage.Find(checksum)
-//
-//	if entity != "" {
-//		c.Status(http.StatusConflict)
-//	} else {
-//		userID, _ := c.Get("userId")
-//		checksum, err = h.Storage.Save(urlToEncode.String(), userID.(string))
-//		if err != nil {
-//			log.Println(err)
-//			c.Status(http.StatusBadRequest)
-//			return
-//		}
-//		c.Status(http.StatusCreated)
-//	}
-//
-//	c.Header(`Content-Type`, `plain/text`)
-//	responseBody := fmt.Sprintf("%s/%s", h.Config.BaseURL, checksum)
-//	c.Writer.Write([]byte(responseBody))
-//}
-//
-//func (h *Handler) CreateJSONShortLink(c *gin.Context) {
-//	body, _ := io.ReadAll(c.Request.Body)
-//	defer c.Request.Body.Close()
-//
-//	requestURL := requestURL{}
-//	if err := json.Unmarshal(body, &requestURL); err != nil {
-//		log.Println(err)
-//		c.Status(http.StatusBadRequest)
-//		return
-//	}
-//
-//	checksum := helpers.GenerateChecksum(requestURL.URL)
-//	entity, _ := h.Storage.Find(checksum)
-//
-//	c.Header(`Content-Type`, gin.MIMEJSON)
-//	if entity != "" {
-//		c.Status(http.StatusConflict)
-//	} else {
-//		userID, _ := c.Get("userId")
-//		checksum, err = h.Storage.Save(requestURL.URL, userID.(string))
-//		if err != nil {
-//			log.Println(err)
-//			c.Status(http.StatusBadRequest)
-//			return
-//		}
-//		c.Status(http.StatusCreated)
-//	}
-//
-//	response := responseURL{
-//		Result: fmt.Sprintf("%s/%s", h.Config.BaseURL, checksum),
-//	}
-//
-//	encodedResponse, err := json.Marshal(&response)
-//	if err != nil {
-//		log.Println(err)
-//		c.Status(http.StatusBadRequest)
-//		return
-//	}
-//
-//	c.Writer.Write(encodedResponse)
-//}
-//
-//func (h *Handler) GetAllLinks(c *gin.Context) {
-//	var response []listURL
-//	userID, _ := c.Get("userId")
-//
-//	for checksum, originalURL := range h.Storage.List(userID.(string)) {
-//		response = append(response, listURL{
-//			ShortURL:    fmt.Sprintf("%s/%s", h.Config.BaseURL, checksum),
-//			OriginalURL: originalURL,
-//		})
-//	}
-//
-//	if len(response) == 0 {
-//		c.Status(http.StatusNoContent)
-//		return
-//	}
-//
-//	encodedResponse, err := json.Marshal(&response)
-//	if err != nil {
-//		log.Println(err)
-//		c.Status(http.StatusBadRequest)
-//		return
-//	}
-//
-//	c.Header(`Content-Type`, gin.MIMEJSON)
-//	c.Writer.Write(encodedResponse)
-//}
-//
-//func (h *Handler) Ping(c *gin.Context) {
-//	var ctx context.Context
-//	db, err := sql.Open("pgx", h.Config.DatabaseDsn)
-//	if err != nil {
-//		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
-//		os.Exit(1)
-//	}
-//	defer db.Close()
-//
-//	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-//	defer cancel()
-//	if err := db.PingContext(ctx); err != nil {
-//		panic(err)
-//	}
-//}
-//
-//func (h *Handler) CreateBatchLinks(c *gin.Context) {
-//	var requestBatchURLs []requestBatchURL
-//	var responseBatchURLs []responseBatchURL
-//	var uniqueViolatesError *storage.UniqueViolatesError
-//
-//	body, _ := io.ReadAll(c.Request.Body)
-//	defer c.Request.Body.Close()
-//
-//	if err := json.Unmarshal(body, &requestBatchURLs); err != nil {
-//		log.Println(err)
-//		c.Status(http.StatusBadRequest)
-//		return
-//	}
-//
-//	c.Header(`Content-Type`, gin.MIMEJSON)
-//
-//	for _, requestURL := range requestBatchURLs {
-//		userID, _ := c.Get("userId")
-//		checksum, err := h.Storage.Save(requestURL.OriginalURL, userID.(string))
-//		if err != nil {
-//			log.Println(err)
-//			if errors.As(err, &uniqueViolatesError) {
-//				c.Status(http.StatusConflict)
-//				return
-//			}
-//			c.Status(http.StatusBadRequest)
-//			return
-//		}
-//
-//		responseBatchURLs = append(responseBatchURLs, responseBatchURL{
-//			ShortURL:      fmt.Sprintf("%s/%s", h.Config.BaseURL, checksum),
-//			CorrelationID: requestURL.CorrelationID,
-//		})
-//	}
-//
-//	encodedResponse, err := json.Marshal(&responseBatchURLs)
-//	if err != nil {
-//		log.Println(err)
-//		c.Status(http.StatusBadRequest)
-//		return
-//	}
-//
-//	c.Status(http.StatusCreated)
-//	c.Writer.Write(encodedResponse)
-//}
+var entityNotFoundError *storage.EntityNotFoundError
+var user *storage.UserModel
+var userLogin *userLoginDto
+var userBalance *storage.UserBalanceModel
+var withdrawHistory *storage.WithdrawHistoryModel
+var withdraw *withdrawDto
+var encodedResponse []byte
+var orderID int
 
 // GetOrders Получение списка загруженных пользователем номеров заказов,
 // статусов их обработки и информации о начислениях
 func (h *Handler) GetOrders(c *gin.Context) {
+	var orders []*storage.OrderModel
+	var response []*getOrdersResponseDto
 
-}
-
-// GetUserBalance Получение текущего баланса счёта баллов лояльности пользователя
-func (h *Handler) GetUserBalance(c *gin.Context) {
-
-}
-
-// GetUserBalanceWithdrawals Получение информации о выводе средств с накопительного счёта пользователем
-func (h *Handler) GetUserBalanceWithdrawals(c *gin.Context) {
-
-}
-
-// RegisterUser Регистрация пользователя
-func (h *Handler) RegisterUser(c *gin.Context) {
-	var userLoginDto userLoginDto
-	var uniqueViolatesError *storage.UniqueViolatesError
-
-	body, _ := io.ReadAll(c.Request.Body)
-	defer c.Request.Body.Close()
-
-	if err := json.Unmarshal(body, &userLoginDto); err != nil {
-		log.Println(err)
-		c.Status(http.StatusBadRequest)
+	userID, exist := h.getUserID(c)
+	if !exist {
 		return
 	}
 
-	authCookie, err := h.Encoder.Encrypt(userLoginDto.Login)
+	orders, err = h.OrderStorage.List(userID)
+	if len(orders) == 0 {
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	for _, order := range orders {
+		response = append(response, &getOrdersResponseDto{
+			Number:     order.ID,
+			Status:     order.Status,
+			Accrual:    order.Accrual,
+			UploadedAt: order.UploadedAt.Format(time.RFC3339),
+		})
+	}
+
+	encodedResponse, err = json.Marshal(&response)
 	if err != nil {
 		log.Println(err)
 		c.Status(http.StatusInternalServerError)
 		return
 	}
 
-	err = h.UserStorage.Create(userLoginDto.Login, userLoginDto.Password)
+	c.Header(`Content-Type`, gin.MIMEJSON)
+	_, err = c.Writer.Write(encodedResponse)
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+}
+
+// GetUserBalance Получение текущего баланса счёта баллов лояльности пользователя
+func (h *Handler) GetUserBalance(c *gin.Context) {
+	userID, exist := h.getUserID(c)
+	if !exist {
+		return
+	}
+
+	userBalance, err = h.UserBalanceStorage.GetBalance(userID)
+
+	response := &getUserBalanceResponseDto{
+		Current:   userBalance.Balance,
+		Withdrawn: userBalance.Withdraw,
+	}
+
+	encodedResponse, err = json.Marshal(&response)
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	c.Header(`Content-Type`, gin.MIMEJSON)
+	_, err = c.Writer.Write(encodedResponse)
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+}
+
+// GetUserWithdrawals Получение информации о выводе средств с накопительного счёта пользователем
+func (h *Handler) GetUserWithdrawals(c *gin.Context) {
+	var withdraws []*storage.WithdrawHistoryModel
+	var response []*getUserWithdrawalsResponseDto
+
+	userID, exist := h.getUserID(c)
+	if !exist {
+		return
+	}
+
+	withdraws, err = h.WithdrawHistoryStorage.List(userID)
+	if len(withdraws) == 0 {
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	for _, withdrawHistory = range withdraws {
+		response = append(response, &getUserWithdrawalsResponseDto{
+			OrderID:     withdrawHistory.OrderID,
+			Sum:         withdrawHistory.Withdraw,
+			ProcessedAt: withdrawHistory.CreatedAt.Format(time.RFC3339),
+		})
+	}
+
+	encodedResponse, err = json.Marshal(&response)
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	c.Header(`Content-Type`, gin.MIMEJSON)
+	_, err = c.Writer.Write(encodedResponse)
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+}
+
+// RegisterUser Регистрация пользователя
+func (h *Handler) RegisterUser(c *gin.Context) {
+	var uniqueViolatesError *storage.UniqueViolatesError
+
+	body, _ := io.ReadAll(c.Request.Body)
+	defer c.Request.Body.Close()
+
+	if err := json.Unmarshal(body, &userLogin); err != nil {
+		log.Println(err)
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	user, err = h.UserStorage.Create(userLogin.Login, userLogin.Password)
 	if err != nil {
 		log.Println(err)
 		if errors.As(err, &uniqueViolatesError) {
@@ -256,6 +204,19 @@ func (h *Handler) RegisterUser(c *gin.Context) {
 			return
 		}
 		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	err := h.UserBalanceStorage.Init(user.ID)
+	if err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	authCookie, err := h.Encoder.Encrypt(strconv.Itoa(user.ID))
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusInternalServerError)
 		return
 	}
 
@@ -272,19 +233,18 @@ func (h *Handler) RegisterUser(c *gin.Context) {
 
 // LoginUser Аутентификация пользователя
 func (h *Handler) LoginUser(c *gin.Context) {
-	var userLoginDto userLoginDto
-	var userNotFoundError *storage.UserNotFoundError
+	var userNotFoundError *storage.EntityNotFoundError
 
 	body, _ := io.ReadAll(c.Request.Body)
 	defer c.Request.Body.Close()
 
-	if err := json.Unmarshal(body, &userLoginDto); err != nil {
+	if err := json.Unmarshal(body, &userLogin); err != nil {
 		log.Println(err)
 		c.Status(http.StatusBadRequest)
 		return
 	}
 
-	_, err = h.UserStorage.Find(userLoginDto.Login, userLoginDto.Password)
+	user, err = h.UserStorage.Find(userLogin.Login, userLogin.Password)
 	if err != nil {
 		log.Println(err)
 		if errors.As(err, &userNotFoundError) {
@@ -295,7 +255,7 @@ func (h *Handler) LoginUser(c *gin.Context) {
 		return
 	}
 
-	authCookie, err := h.Encoder.Encrypt(userLoginDto.Login)
+	authCookie, err := h.Encoder.Encrypt(strconv.Itoa(user.ID))
 	if err != nil {
 		log.Println(err)
 		c.Status(http.StatusInternalServerError)
@@ -315,11 +275,143 @@ func (h *Handler) LoginUser(c *gin.Context) {
 
 // SaveOrder Загрузка пользователем номера заказа для расчёта
 func (h *Handler) SaveOrder(c *gin.Context) {
-	//body, _ := io.ReadAll(c.Request.Body)
-	//defer c.Request.Body.Close()
+	var accrualOrder *integrations.AccrualOrder
+	var order *storage.OrderModel
+
+	body, _ := io.ReadAll(c.Request.Body)
+	defer c.Request.Body.Close()
+
+	orderID, err = strconv.Atoi(string(body))
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	if !luhn.Valid(orderID) {
+		c.Status(http.StatusUnprocessableEntity)
+		return
+	}
+
+	order, err = h.OrderStorage.Find(strconv.Itoa(orderID))
+	if err != nil {
+		if !errors.As(err, &entityNotFoundError) {
+			c.Status(http.StatusBadRequest)
+			return
+		}
+	}
+
+	userID, exist := h.getUserID(c)
+	if !exist {
+		return
+	}
+
+	if order != nil {
+		if order.UserID == userID {
+			c.Status(http.StatusOK)
+			return
+		} else {
+			c.Status(http.StatusConflict)
+			return
+		}
+	}
+
+	accrualOrder, err = h.AccrualAPIClient.GetAccrualOrderData(strconv.Itoa(orderID))
+	if err != nil {
+		log.Println(err)
+	}
+
+	accrual := 0.0
+	status := enums.AccrualOrderStatusNew.String()
+	if accrualOrder != nil {
+		accrual = accrualOrder.Accrual
+		status = accrualOrder.Status
+	}
+
+	orderModel := &storage.OrderModel{
+		ID:      strconv.Itoa(orderID),
+		UserID:  userID,
+		Accrual: accrual,
+		Status:  status,
+	}
+	err = h.OrderStorage.Create(orderModel)
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	if accrual > 0 {
+		userBalance, err = h.UserBalanceStorage.GetBalance(userID)
+		userBalance.Balance += accrual
+		err = h.UserBalanceStorage.Update(userBalance)
+		if err != nil {
+			log.Println(err)
+			c.Status(http.StatusBadRequest)
+			return
+		}
+	}
+
+	c.Status(http.StatusAccepted)
 }
 
 // Withdraw Списание баллов с накопительного счёта в счёт оплаты нового заказа
 func (h *Handler) Withdraw(c *gin.Context) {
+	body, _ := io.ReadAll(c.Request.Body)
+	defer c.Request.Body.Close()
 
+	if err := json.Unmarshal(body, &withdraw); err != nil {
+		log.Println(err)
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	orderID, err = strconv.Atoi(withdraw.OrderID)
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	if !luhn.Valid(orderID) {
+		c.Status(http.StatusUnprocessableEntity)
+		return
+	}
+
+	userID, exist := h.getUserID(c)
+	if !exist {
+		return
+	}
+
+	userBalance, err = h.UserBalanceStorage.GetBalance(userID)
+
+	if userBalance.Balance < withdraw.Sum {
+		c.Status(http.StatusPaymentRequired)
+		return
+	}
+
+	userBalance.Balance -= withdraw.Sum
+	userBalance.Withdraw += withdraw.Sum
+	err = h.UserBalanceStorage.Update(userBalance)
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	withdrawHistory, err = h.WithdrawHistoryStorage.Create(userID, withdraw.Sum)
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusBadRequest)
+		return
+	}
+}
+
+func (h *Handler) getUserID(c *gin.Context) (int, bool) {
+	val, exist := c.Get("userId")
+	if !exist {
+		log.Println("userId not exist")
+		c.Status(http.StatusInternalServerError)
+		return 0, false
+	}
+	userID, _ := strconv.Atoi(val.(string))
+	return userID, true
 }

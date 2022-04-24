@@ -13,13 +13,6 @@ type (
 	PostgresDatabase struct {
 		db *sql.DB
 	}
-
-	URLEntity struct {
-		CorrelationID string
-		ShortURLID    string
-		UserID        string
-		FullURL       string
-	}
 )
 
 type UniqueViolatesError struct{ Err error }
@@ -34,14 +27,14 @@ func NewUniqueViolatesError(err error) error {
 	}
 }
 
-type UserNotFoundError struct{ Err error }
+type EntityNotFoundError struct{ Err error }
 
-func (unf *UserNotFoundError) Error() string {
-	return fmt.Sprintf("UserNotFoundError: %v", unf.Err)
+func (unf *EntityNotFoundError) Error() string {
+	return fmt.Sprintf("EntityNotFoundError: %v", unf.Err)
 }
 
-func NewUserNotFoundError(err error) error {
-	return &UserNotFoundError{
+func NewEntityNotFoundError(err error) error {
+	return &EntityNotFoundError{
 		Err: err,
 	}
 }
@@ -58,66 +51,6 @@ func NewPostgresDatabase(dsn string) *PostgresDatabase {
 
 	return &md
 }
-
-//
-//func (m *PostgresDatabase) Find(Id string) (string, error) {
-//	var url string
-//
-//	row := m.db.QueryRow("SELECT full_url FROM urls WHERE short_url_id = $1", Id)
-//	err := row.Scan(&url)
-//	if err != nil {
-//		return "", err
-//	}
-//
-//	return url, nil
-//}
-//
-//func (m *PostgresDatabase) Save(url string, userID string) (string, error) {
-//	checksum := helpers.GenerateChecksum(url)
-//
-//	_, err := m.db.Exec(
-//		"INSERT INTO urls (short_url_id, user_id, full_url) VALUES ($1, $2, $3)",
-//		checksum,
-//		userID,
-//		url,
-//	)
-//
-//	if err != nil {
-//		if strings.Contains(err.Error(), "23505") {
-//			return checksum, NewUniqueViolatesError(err)
-//		}
-//		return "", err
-//	}
-//
-//	return checksum, nil
-//}
-//
-//func (m *PostgresDatabase) List(userID string) map[string]string {
-//	var fullURL string
-//	var shortURLID string
-//
-//	result := make(map[string]string)
-//
-//	rows, err := m.db.Query("SELECT full_url, short_url_id FROM urls WHERE user_id = $1", userID)
-//	if err != nil {
-//		return result
-//	}
-//	defer rows.Close()
-//	for rows.Next() {
-//		err := rows.Scan(&fullURL, &shortURLID)
-//		if err != nil {
-//			return result
-//		}
-//
-//		result[shortURLID] = fullURL
-//	}
-//	err = rows.Err()
-//	if err != nil {
-//		return result
-//	}
-//
-//	return result
-//}
 
 func (m *PostgresDatabase) Close() error {
 	return m.db.Close()

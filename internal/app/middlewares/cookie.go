@@ -17,9 +17,7 @@ type Middleware struct {
 func (m *Middleware) NeedAuth(c *gin.Context) {
 	authCookie, _ := c.Request.Cookie("user")
 	if authCookie == nil {
-		log.Printf("Не авторизован")
-		c.Status(http.StatusUnauthorized)
-
+		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 

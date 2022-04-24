@@ -29,7 +29,7 @@ func (c *Config) ParseCommandLine() {
 		flag.StringVarP(&c.DatabaseDsn, "d", "d", c.DatabaseDsn, "-d db_driver://user:pass@domain:port/db_name")
 	}
 	if flag.Lookup("r") == nil {
-		flag.StringVarP(&c.AccrualSystemAddress, "r", "r", c.DatabaseDsn, "-r ?")
+		flag.StringVarP(&c.AccrualSystemAddress, "r", "r", c.AccrualSystemAddress, "-r ?")
 	}
 
 	flag.Parse()
