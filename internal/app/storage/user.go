@@ -15,10 +15,8 @@ type UserModel struct {
 	Password string
 }
 
-var user *UserModel
-
 func (u *UserStorage) Create(login string, password string) (*UserModel, error) {
-	user = &UserModel{}
+	user := &UserModel{}
 	row := u.DB.QueryRow(
 		"INSERT INTO users (login, password) VALUES ($1, $2) RETURNING id, login, password",
 		login,
@@ -45,7 +43,7 @@ func (u *UserStorage) Create(login string, password string) (*UserModel, error) 
 }
 
 func (u *UserStorage) Find(login string, password string) (*UserModel, error) {
-	user = &UserModel{}
+	user := &UserModel{}
 
 	row := u.DB.QueryRow("SELECT * FROM users WHERE login = $1 and password = $2", login, password)
 	err := row.Scan(&user.ID, &user.Login, &user.Password)

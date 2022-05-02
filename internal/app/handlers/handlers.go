@@ -61,16 +61,6 @@ type (
 	}
 )
 
-var err error
-var entityNotFoundError *storage.EntityNotFoundError
-var user *storage.UserModel
-var userLogin *userLoginDto
-var userBalance *storage.UserBalanceModel
-var withdrawHistory *storage.WithdrawHistoryModel
-var withdraw *withdrawDto
-var encodedResponse []byte
-var orderID int
-
 // GetOrders Получение списка загруженных пользователем номеров заказов,
 // статусов их обработки и информации о начислениях
 func (h *Handler) GetOrders(c *gin.Context) {
@@ -82,7 +72,12 @@ func (h *Handler) GetOrders(c *gin.Context) {
 		return
 	}
 
-	orders, err = h.OrderStorage.List(userID)
+	orders, err := h.OrderStorage.List(userID)
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
 	if len(orders) == 0 {
 		c.Status(http.StatusNoContent)
 		return
@@ -97,7 +92,7 @@ func (h *Handler) GetOrders(c *gin.Context) {
 		})
 	}
 
-	encodedResponse, err = json.Marshal(&response)
+	encodedResponse, err := json.Marshal(&response)
 	if err != nil {
 		log.Println(err)
 		c.Status(http.StatusInternalServerError)
@@ -120,14 +115,19 @@ func (h *Handler) GetUserBalance(c *gin.Context) {
 		return
 	}
 
-	userBalance, err = h.UserBalanceStorage.GetBalance(userID)
+	userBalance, err := h.UserBalanceStorage.GetBalance(userID)
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
 
 	response := &getUserBalanceResponseDto{
 		Current:   userBalance.Balance,
 		Withdrawn: userBalance.Withdraw,
 	}
 
-	encodedResponse, err = json.Marshal(&response)
+	encodedResponse, err := json.Marshal(&response)
 	if err != nil {
 		log.Println(err)
 		c.Status(http.StatusInternalServerError)
@@ -153,13 +153,18 @@ func (h *Handler) GetUserWithdrawals(c *gin.Context) {
 		return
 	}
 
-	withdraws, err = h.WithdrawHistoryStorage.List(userID)
+	withdraws, err := h.WithdrawHistoryStorage.List(userID)
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
 	if len(withdraws) == 0 {
 		c.Status(http.StatusNoContent)
 		return
 	}
 
-	for _, withdrawHistory = range withdraws {
+	for _, withdrawHistory := range withdraws {
 		response = append(response, &getUserWithdrawalsResponseDto{
 			OrderID:     withdrawHistory.OrderID,
 			Sum:         withdrawHistory.Withdraw,
@@ -167,7 +172,7 @@ func (h *Handler) GetUserWithdrawals(c *gin.Context) {
 		})
 	}
 
-	encodedResponse, err = json.Marshal(&response)
+	encodedResponse, err := json.Marshal(&response)
 	if err != nil {
 		log.Println(err)
 		c.Status(http.StatusInternalServerError)
@@ -186,6 +191,7 @@ func (h *Handler) GetUserWithdrawals(c *gin.Context) {
 // RegisterUser Регистрация пользователя
 func (h *Handler) RegisterUser(c *gin.Context) {
 	var uniqueViolatesError *storage.UniqueViolatesError
+	var userLogin *userLoginDto
 
 	body, _ := io.ReadAll(c.Request.Body)
 	defer c.Request.Body.Close()
@@ -196,7 +202,7 @@ func (h *Handler) RegisterUser(c *gin.Context) {
 		return
 	}
 
-	user, err = h.UserStorage.Create(userLogin.Login, userLogin.Password)
+	user, err := h.UserStorage.Create(userLogin.Login, userLogin.Password)
 	if err != nil {
 		log.Println(err)
 		if errors.As(err, &uniqueViolatesError) {
@@ -207,7 +213,7 @@ func (h *Handler) RegisterUser(c *gin.Context) {
 		return
 	}
 
-	err := h.UserBalanceStorage.Init(user.ID)
+	err = h.UserBalanceStorage.Init(user.ID)
 	if err != nil {
 		c.Status(http.StatusInternalServerError)
 		return
@@ -234,6 +240,7 @@ func (h *Handler) RegisterUser(c *gin.Context) {
 // LoginUser Аутентификация пользователя
 func (h *Handler) LoginUser(c *gin.Context) {
 	var userNotFoundError *storage.EntityNotFoundError
+	var userLogin *userLoginDto
 
 	body, _ := io.ReadAll(c.Request.Body)
 	defer c.Request.Body.Close()
@@ -244,7 +251,7 @@ func (h *Handler) LoginUser(c *gin.Context) {
 		return
 	}
 
-	user, err = h.UserStorage.Find(userLogin.Login, userLogin.Password)
+	user, err := h.UserStorage.Find(userLogin.Login, userLogin.Password)
 	if err != nil {
 		log.Println(err)
 		if errors.As(err, &userNotFoundError) {
@@ -277,11 +284,12 @@ func (h *Handler) LoginUser(c *gin.Context) {
 func (h *Handler) SaveOrder(c *gin.Context) {
 	var accrualOrder *integrations.AccrualOrder
 	var order *storage.OrderModel
+	var entityNotFoundError *storage.EntityNotFoundError
 
 	body, _ := io.ReadAll(c.Request.Body)
 	defer c.Request.Body.Close()
 
-	orderID, err = strconv.Atoi(string(body))
+	orderID, err := strconv.Atoi(string(body))
 	if err != nil {
 		c.Status(http.StatusBadRequest)
 		return
@@ -341,7 +349,12 @@ func (h *Handler) SaveOrder(c *gin.Context) {
 	}
 
 	if accrual > 0 {
-		userBalance, err = h.UserBalanceStorage.GetBalance(userID)
+		userBalance, err := h.UserBalanceStorage.GetBalance(userID)
+		if err != nil {
+			log.Println(err)
+			c.Status(http.StatusInternalServerError)
+			return
+		}
 		userBalance.Balance += accrual
 		err = h.UserBalanceStorage.Update(userBalance)
 		if err != nil {
@@ -356,6 +369,8 @@ func (h *Handler) SaveOrder(c *gin.Context) {
 
 // Withdraw Списание баллов с накопительного счёта в счёт оплаты нового заказа
 func (h *Handler) Withdraw(c *gin.Context) {
+	var withdraw *withdrawDto
+
 	body, _ := io.ReadAll(c.Request.Body)
 	defer c.Request.Body.Close()
 
@@ -365,7 +380,7 @@ func (h *Handler) Withdraw(c *gin.Context) {
 		return
 	}
 
-	orderID, err = strconv.Atoi(withdraw.OrderID)
+	orderID, err := strconv.Atoi(withdraw.OrderID)
 	if err != nil {
 		c.Status(http.StatusBadRequest)
 		return
@@ -381,7 +396,12 @@ func (h *Handler) Withdraw(c *gin.Context) {
 		return
 	}
 
-	userBalance, err = h.UserBalanceStorage.GetBalance(userID)
+	userBalance, err := h.UserBalanceStorage.GetBalance(userID)
+	if err != nil {
+		log.Println(err)
+		c.Status(http.StatusInternalServerError)
+		return
+	}
 
 	if userBalance.Balance < withdraw.Sum {
 		c.Status(http.StatusPaymentRequired)
@@ -397,7 +417,7 @@ func (h *Handler) Withdraw(c *gin.Context) {
 		return
 	}
 
-	withdrawHistory, err = h.WithdrawHistoryStorage.Create(userID, withdraw.Sum)
+	_, err = h.WithdrawHistoryStorage.Create(userID, withdraw.Sum)
 	if err != nil {
 		log.Println(err)
 		c.Status(http.StatusBadRequest)

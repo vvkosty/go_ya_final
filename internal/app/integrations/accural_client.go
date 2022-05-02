@@ -22,9 +22,9 @@ func (a AccrualOrder) String() string {
 	return fmt.Sprintf("Number: %s, Status: %s, Accrual: %f", a.Number, a.Status, a.Accrual)
 }
 
-var ao AccrualOrder
-
 func (as AccrualAPIClient) GetAccrualOrderData(orderID string) (*AccrualOrder, error) {
+	var ao AccrualOrder
+
 	res, err := http.Get(fmt.Sprintf("%s/api/orders/%s", as.BaseAddress, orderID))
 	if err != nil {
 		return nil, errors.New("accrual response error")
